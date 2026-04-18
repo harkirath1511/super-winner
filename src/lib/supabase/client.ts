@@ -12,7 +12,7 @@ const supabaseClient = isSupabaseConfigured
 export function getSupabaseClient() {
   if (!supabaseClient) {
     throw new Error(
-      "Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY environment variables.",
+      "Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY. Set them in .env.local (see .env.example).",
     );
   }
 
