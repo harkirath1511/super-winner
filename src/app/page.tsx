@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase/client";
+import { isSupabaseConfigured } from "@/lib/supabase/client";
 
 export default function Home() {
   return (
@@ -9,7 +9,10 @@ export default function Home() {
         Supabase client setup.
       </p>
       <p className="text-sm text-zinc-500 dark:text-zinc-400">
-        Supabase status: {supabase ? "configured" : "missing NEXT_PUBLIC_SUPABASE_* env vars"}
+        Supabase status:{" "}
+        {isSupabaseConfigured
+          ? "configured"
+          : "missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY environment variables"}
       </p>
     </main>
   );
