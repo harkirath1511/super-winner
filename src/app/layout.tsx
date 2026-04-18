@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-  title: "Next.js + TypeScript + Supabase",
-  description: "Simple Next.js TypeScript setup connected with Supabase client.",
+  title: "LLM Twin — Anonymous Survey Agent",
+  description:
+    "Build your personal AI twin that answers surveys on your behalf, anonymously.",
 };
 
 export default function RootLayout({
@@ -13,7 +15,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="h-full antialiased">
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col bg-zinc-950 text-zinc-100">
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }
