@@ -5,8 +5,13 @@ import { useRouter } from "next/navigation";
 import { useAccount, useConnect, useDisconnect, useSignMessage } from "wagmi";
 import { SiweMessage } from "siwe";
 import { injected } from "wagmi/connectors";
+import { NeoBtn, NeoPanel, MarqueeBar } from "./onboarding/_components/neo-ui";
 
 type AuthState = "idle" | "connecting" | "signing" | "verifying" | "done" | "error";
+
+const DEMO_BOT =
+  "https://api.dicebear.com/7.x/bottts/svg?seed=BuddyTwin&backgroundType=solid&backgroundColor=FFD93D";
+const DEMO_USER = "https://api.dicebear.com/7.x/avataaars/svg?seed=Explorer";
 
 export default function LandingPage() {
   const router = useRouter();
@@ -18,7 +23,6 @@ export default function LandingPage() {
   const [authState, setAuthState] = useState<AuthState>("idle");
   const [errorMsg, setErrorMsg] = useState("");
 
-  // Check if already authenticated
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => r.json())
@@ -43,7 +47,6 @@ export default function LandingPage() {
 
       setAuthState("signing");
 
-      // Get nonce from server
       const nonceRes = await fetch("/api/auth/nonce");
       const { nonce } = (await nonceRes.json()) as { nonce: string };
 
@@ -87,105 +90,243 @@ export default function LandingPage() {
     }
   }, [address, isConnected, connectAsync, signMessageAsync, router]);
 
-  const stateLabel: Record<AuthState, string> = {
-    idle: "Connect MetaMask",
-    connecting: "Connecting wallet…",
-    signing: "Sign the message in MetaMask…",
-    verifying: "Verifying…",
-    done: "Redirecting…",
-    error: "Try again",
-  };
+  const busy =
+    authState === "connecting" ||
+    authState === "signing" ||
+    authState === "verifying" ||
+    authState === "done";
+
+  const label =
+    authState === "connecting"
+      ? "Connecting wallet"
+      : authState === "signing"
+        ? "Sign in MetaMask"
+        : authState === "verifying"
+          ? "Verifying"
+          : authState === "done"
+            ? "Redirecting"
+            : authState === "error"
+              ? "Try again"
+              : "Enter with MetaMask";
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center px-6 bg-zinc-950">
-      {/* Background glow */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full bg-violet-900/20 blur-[120px]" />
-      </div>
-
-      <div className="relative z-10 flex flex-col items-center gap-8 max-w-lg text-center">
-        {/* Logo mark */}
-        <div className="flex items-center justify-center w-16 h-16 rounded-2xl bg-violet-600/20 border border-violet-500/30">
-          <svg
-            className="w-8 h-8 text-violet-400"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.5}
-              d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1 1 .03 2.698-1.538 2.698H4.336c-1.569 0-2.538-1.698-1.538-2.698L4.2 15.3"
-            />
-          </svg>
+    <div className="min-h-screen av-page overflow-x-hidden">
+      <nav className="fixed top-0 left-0 right-0 z-50 px-4 py-4 pointer-events-none">
+        <div className="max-w-6xl mx-auto flex justify-between items-center pointer-events-auto">
+          <div className="flex items-center gap-3 av-pop rounded-2xl bg-white px-5 py-2.5">
+            <div className="rounded-xl border-[3px] border-black bg-[#FF6B6B] p-2 text-white text-lg leading-none">
+              ✦
+            </div>
+            <span className="text-xl sm:text-2xl font-black tracking-tight">LLM Twin</span>
+          </div>
+          <NeoBtn variant="blue" className="text-sm py-2.5 px-4" onClick={signIn} disabled={busy}>
+            {busy ? "Wait..." : "Launch"}
+          </NeoBtn>
         </div>
+      </nav>
 
-        <div className="space-y-3">
-          <h1 className="text-4xl font-bold text-zinc-50 tracking-tight">
-            LLM Twin
-          </h1>
-          <p className="text-zinc-400 text-lg leading-relaxed">
-            Build a personal AI that answers surveys on your behalf — your
-            identity stays <span className="text-violet-400 font-medium">completely anonymous</span>.
-          </p>
-        </div>
+      <header className="relative pt-28 sm:pt-36 pb-12 px-4 sm:px-6">
+        <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+          <div className="space-y-6 relative z-10">
+            <div className="inline-block av-pop rounded-full bg-[#A29BFE] px-5 py-2 -rotate-2">
+              <span className="font-black text-white uppercase text-sm tracking-wide">Tap-first AI twin</span>
+            </div>
 
-        {/* Feature pills */}
-        <div className="flex flex-wrap gap-2 justify-center">
-          {[
-            "🧠 Adaptive AI interviewer",
-            "🔍 Web-enriched context",
-            "🔗 IPFS knowledge base",
-            "🦊 MetaMask sign-in",
-          ].map((f) => (
-            <span
-              key={f}
-              className="px-3 py-1 rounded-full bg-zinc-800 border border-zinc-700 text-sm text-zinc-300"
-            >
-              {f}
-            </span>
-          ))}
-        </div>
+            <h1 className="text-4xl sm:text-5xl lg:text-7xl font-black text-black leading-[0.95] tracking-tighter">
+              A survey twin
+              <br />
+              for{" "}
+              <span className="text-[#4D96FF] underline decoration-4 decoration-black underline-offset-4">
+                every wallet.
+              </span>
+            </h1>
 
-        {/* CTA */}
-        <div className="flex flex-col items-center gap-3 w-full">
-          <button
-            onClick={signIn}
-            disabled={authState === "connecting" || authState === "signing" || authState === "verifying" || authState === "done"}
-            className="w-full max-w-xs flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:bg-violet-800 disabled:cursor-not-allowed text-white font-semibold transition-all duration-150 shadow-lg shadow-violet-900/40"
-          >
-            {(authState === "connecting" || authState === "signing" || authState === "verifying" || authState === "done") && (
-              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-            )}
-            {stateLabel[authState]}
-          </button>
-
-          {errorMsg && (
-            <p className="text-red-400 text-sm">{errorMsg}</p>
-          )}
-
-          {isConnected && address && authState === "idle" && (
-            <p className="text-zinc-500 text-xs">
-              Connected: {address.slice(0, 6)}…{address.slice(-4)}{" "}
-              <button
-                onClick={() => disconnect()}
-                className="text-zinc-400 hover:text-zinc-200 underline"
-              >
-                Disconnect
-              </button>
+            <p className="text-lg sm:text-xl font-bold text-black/70 max-w-lg">
+              Buttons, chips, and quick saves. Your wallet is your ID. Facts land on IPFS. No essays required.
             </p>
-          )}
-        </div>
 
-        <p className="text-zinc-600 text-xs max-w-xs">
-          No email. No password. Your wallet address is your pseudonymous
-          identity — we never store your real name.
-        </p>
-      </div>
-    </main>
+            <div className="flex flex-col sm:flex-row gap-4 pt-2">
+              <NeoBtn variant="lime" className="w-full sm:w-auto text-base py-4 px-8" onClick={signIn} disabled={busy}>
+                {busy ? `${label}...` : label}
+              </NeoBtn>
+              <NeoBtn variant="outline" className="w-full sm:w-auto text-base py-4 px-8" onClick={signIn} disabled={busy}>
+                I already use MetaMask
+              </NeoBtn>
+            </div>
+
+            {errorMsg && (
+              <NeoPanel tone="hot" className="p-4 text-sm font-bold">
+                {errorMsg}
+              </NeoPanel>
+            )}
+
+            {isConnected && address && authState === "idle" && (
+              <p className="text-sm font-bold text-neutral-600">
+                Linked {address.slice(0, 6)}...{address.slice(-4)}{" "}
+                <button type="button" onClick={() => disconnect()} className="underline decoration-2 underline-offset-2">
+                  Disconnect
+                </button>
+              </p>
+            )}
+
+            <div className="flex items-center gap-4 pt-4">
+              <div className="flex -space-x-3">
+                {[1, 2, 3, 4].map((i) => (
+                  <div
+                    key={i}
+                    className="w-11 h-11 rounded-full border-[3px] border-black bg-gray-200 overflow-hidden shadow-[2px_2px_0_0_#000]"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${i * 17}`}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                ))}
+              </div>
+              <p className="font-bold text-sm sm:text-base leading-tight">
+                Anonymous
+                <br />
+                by design
+              </p>
+            </div>
+          </div>
+
+          <div className="relative hidden lg:block">
+            <NeoPanel className="relative z-10 p-6 rounded-[36px] overflow-hidden rotate-1" largeShadow>
+              <div className="flex items-center gap-3 mb-5 border-b-[3px] border-black pb-4">
+                <span className="w-4 h-4 rounded-full border-2 border-black bg-[#FF6B6B]" />
+                <span className="w-4 h-4 rounded-full border-2 border-black bg-[#FFD93D]" />
+                <span className="w-4 h-4 rounded-full border-2 border-black bg-[#6BCB77]" />
+                <span className="ml-auto rounded-full border-2 border-black bg-neutral-100 px-3 py-1 text-xs font-bold text-neutral-500">
+                  twin.app
+                </span>
+              </div>
+
+              <div className="space-y-5">
+                <div className="flex gap-3 items-end">
+                  <div className="w-14 h-14 rounded-2xl border-[3px] border-black overflow-hidden bg-[#FFD93D] shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={DEMO_BOT} alt="" className="w-full h-full object-cover" />
+                  </div>
+                  <div className="border-[3px] border-black bg-[#E0E0E0] p-4 rounded-2xl rounded-bl-none shadow-[3px_3px_0_0_#000]">
+                    <p className="font-bold text-base">Ready to stamp your first fact?</p>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 items-end justify-end">
+                  <div className="border-[3px] border-black bg-[#4D96FF] text-white p-4 rounded-2xl rounded-br-none shadow-[3px_3px_0_0_#000]">
+                    <p className="font-bold text-base">Yes - let&apos;s go.</p>
+                  </div>
+                  <div className="w-14 h-14 rounded-2xl border-[3px] border-black overflow-hidden bg-white shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={DEMO_USER} alt="" className="w-full h-full object-cover" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 bg-neutral-100 p-3 rounded-xl border-[3px] border-black flex justify-between items-center text-neutral-400 font-bold text-sm">
+                <span>Type a message...</span>
+                <span className="bg-[#6BCB77] text-white p-2 rounded-lg border-2 border-black text-xs">Go</span>
+              </div>
+            </NeoPanel>
+
+            <div className="absolute -top-8 -right-6 w-full h-full max-w-md bg-[#FF6B6B] rounded-[36px] border-[4px] border-black -z-10 -rotate-3" aria-hidden />
+          </div>
+        </div>
+      </header>
+
+      <MarqueeBar text="SIWE • IPFS KB • TAVILY SEARCH • TAP UI • ZERO PII •" />
+
+      <section className="py-16 sm:py-20 px-4 sm:px-6 av-polka-blue border-y-[3px] border-black">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-12 space-y-3">
+            <div className="inline-block av-pop rounded-full bg-white px-5 py-2 -rotate-1 mx-auto">
+              <h2 className="text-lg font-black text-black uppercase">Why it works</h2>
+            </div>
+            <h2
+              className="text-3xl sm:text-5xl md:text-6xl font-black text-white uppercase leading-tight"
+              style={{ WebkitTextStroke: "2px black", paintOrder: "stroke fill" }}
+            >
+              Designed for
+              <br />
+              fast capture
+            </h2>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-6">
+            {[
+              {
+                title: "Tap, don't type",
+                body: "The agent throws buttons, A/B picks, and tag stamps so you never stare at a blank box.",
+                tone: "yellow" as const,
+                tilt: "-rotate-1",
+              },
+              {
+                title: "Your KB, your chain ID",
+                body: "Sign once with MetaMask. Facts pin to IPFS with topics you control.",
+                tone: "white" as const,
+                tilt: "rotate-1",
+              },
+              {
+                title: "Web when needed",
+                body: "Tavily-backed search and URL extract keep answers grounded without leaving the flow.",
+                tone: "hot" as const,
+                tilt: "-rotate-1",
+              },
+            ].map((card) => (
+              <NeoPanel
+                key={card.title}
+                tone={card.tone}
+                className={`p-6 sm:p-8 rounded-[28px] h-full flex flex-col gap-4 ${card.tilt}`}
+                largeShadow
+              >
+                <h3 className="text-2xl font-black uppercase leading-none">{card.title}</h3>
+                <p className="text-base font-bold text-black/70 leading-snug normal-case">{card.body}</p>
+              </NeoPanel>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="py-16 sm:py-24 px-4 sm:px-6 bg-[#FFD93D] relative overflow-hidden border-b-[3px] border-black">
+        <div
+          className="absolute inset-0 opacity-[0.07] pointer-events-none"
+          style={{
+            backgroundImage: "radial-gradient(#000 2px, transparent 2px)",
+            backgroundSize: "20px 20px",
+          }}
+          aria-hidden
+        />
+        <div className="max-w-3xl mx-auto text-center relative z-10 space-y-8">
+          <h2 className="text-4xl sm:text-6xl font-black text-black leading-tight">
+            Ready to meet
+            <br />
+            your twin?
+          </h2>
+          <NeoPanel className="p-6 sm:p-10 rounded-[32px] text-left space-y-4" largeShadow>
+            <p className="text-lg font-bold text-neutral-700 normal-case">
+              One sign-in, one onboarding run, then your dashboard lists every pinned row with filters and IPFS links.
+            </p>
+            <NeoBtn variant="blue" className="w-full text-lg py-4" onClick={signIn} disabled={busy}>
+              {busy ? `${label}...` : "Start with MetaMask"}
+            </NeoBtn>
+          </NeoPanel>
+        </div>
+      </section>
+
+      <footer className="bg-black text-white py-12 px-6 border-t-[6px] border-[#FF6B6B]">
+        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row justify-between gap-8">
+          <div>
+            <p className="text-2xl font-black">LLM Twin</p>
+            <p className="text-sm font-bold text-neutral-400 mt-2 max-w-sm normal-case">
+              Anonymous survey twin. Built for playful onboarding and serious IPFS receipts.
+            </p>
+          </div>
+          <p className="text-sm font-bold text-neutral-500 self-end">2026</p>
+        </div>
+      </footer>
+    </div>
   );
 }

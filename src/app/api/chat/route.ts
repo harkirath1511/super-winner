@@ -86,9 +86,6 @@ export async function POST(req: NextRequest) {
     return Response.json({ toolResults: results });
   }
 
-  // Client-side / HITL tools stay in `input-available` until the user approves.
-  // If the user sends a new chat message first, conversion would otherwise throw
-  // AI_MissingToolResultsError — strip incomplete tool parts instead (not Pinata).
   const modelMessages = await convertToModelMessages(body.messages, {
     ignoreIncompleteToolCalls: true,
     tools: allTools,
@@ -98,7 +95,7 @@ export async function POST(req: NextRequest) {
     system: buildSystemPrompt(wallet),
     messages: modelMessages,
     tools: allTools,
-    stopWhen: stepCountIs(8),
+    stopWhen: stepCountIs(14),
   });
 
   return result.toUIMessageStreamResponse();

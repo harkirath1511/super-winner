@@ -1,9 +1,21 @@
 "use client";
 
 import { useState } from "react";
-import type { DynamicToolUIPart } from "ai";
+import { getToolName, type DynamicToolUIPart, type ToolUIPart, type UITools } from "ai";
+import { NeoBtn, NeoPanel, NeoStrip } from "./neo-ui";
 
-// ── Types for each tool's input ──────────────────────────────────────────────
+/** Static (`tool-*`) and dynamic tool UI parts from the chat stream */
+export type AppToolUIPart = ToolUIPart<UITools> | DynamicToolUIPart;
+
+function LoadingToolCard({ label }: { label: string }) {
+  return (
+    <NeoPanel tone="yellow" className="max-w-xl p-4 text-xs font-black uppercase animate-pulse">
+      Loading {label}...
+    </NeoPanel>
+  );
+}
+
+// ── Shared types ─────────────────────────────────────────────────────────────
 
 interface AskUserQuestionInput {
   question: string;
@@ -11,6 +23,41 @@ interface AskUserQuestionInput {
   options?: string[];
   scale_min_label?: string;
   scale_max_label?: string;
+  wallet: string;
+}
+
+interface SnackRunInput {
+  headline: string;
+  picks: string[];
+  wallet: string;
+}
+
+interface VersusPickInput {
+  prompt: string;
+  optionA: string;
+  optionB: string;
+  wallet: string;
+}
+
+interface ChallengeFactInput {
+  claim: string;
+  wallet: string;
+}
+
+interface StampTagsInput {
+  headline: string;
+  tags: string[];
+  wallet: string;
+}
+
+interface OnboardingPulseOutput {
+  banner: string;
+  factCount: number;
+  topicCount: number;
+  topics: string[];
+  pct: number;
+  huntThese: string[];
+  pinataError?: boolean;
 }
 
 interface TavilyResult {
@@ -30,6 +77,15 @@ interface ExtractUrlOutput {
   url: string;
   rawContent: string;
   summary?: string;
+}
+
+interface WikipediaToolOutput {
+  ok: boolean;
+  title?: string;
+  extract?: string;
+  url?: string;
+  description?: string;
+  error?: string;
 }
 
 interface ListKbOutput {
@@ -75,273 +131,541 @@ interface FinishOnboardingInput {
   wallet: string;
 }
 
-// ── Props ────────────────────────────────────────────────────────────────────
-
 interface ToolPartProps {
-  part: DynamicToolUIPart;
+  part: AppToolUIPart;
   onAddToolResult: (toolCallId: string, toolName: string, result: unknown) => void;
 }
 
 // ── AskUserQuestion ──────────────────────────────────────────────────────────
 
-function AskUserQuestionCard({
-  part,
-  onAddToolResult,
-}: ToolPartProps) {
-  const input = part.input as AskUserQuestionInput;
+function AskUserQuestionCard({ part, onAddToolResult }: ToolPartProps) {
+  const raw = part.input as Partial<AskUserQuestionInput> | undefined;
   const [textValue, setTextValue] = useState("");
   const [scaleValue, setScaleValue] = useState(5);
   const [answered, setAnswered] = useState(part.state === "output-available");
 
   const submit = (answer: unknown) => {
     setAnswered(true);
-    onAddToolResult(part.toolCallId, part.toolName, { answer, answeredAt: new Date().toISOString() });
+    onAddToolResult(part.toolCallId, getToolName(part), { answer, answeredAt: new Date().toISOString() });
   };
 
+  const question = raw?.question?.trim() ?? "";
+  const kind = raw?.kind;
+  const options = Array.isArray(raw?.options) ? raw.options.filter(Boolean) : [];
+  const inputReady =
+    kind === "choice"
+      ? question.length > 0 && options.length > 0
+      : kind === "text"
+        ? question.length > 0
+        : kind === "scale"
+          ? question.length > 0
+          : false;
+
   if ((part.state === "input-available" || part.state === "input-streaming") && !answered) {
+    if (!inputReady) return <LoadingToolCard label="question" />;
+    const input = raw as AskUserQuestionInput;
     return (
-      <div className="rounded-xl border border-violet-500/30 bg-violet-950/30 p-4 space-y-3 max-w-lg">
-        <p className="text-sm font-medium text-violet-300">
-          {input.question}
-        </p>
-
-        {input.kind === "choice" && input.options && (
-          <div className="flex flex-wrap gap-2">
-            {input.options.map((opt) => (
-              <button
-                key={opt}
-                onClick={() => submit(opt)}
-                className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-violet-700 border border-zinc-700 hover:border-violet-500 text-sm text-zinc-200 transition-all"
-              >
-                {opt}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {input.kind === "text" && (
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={textValue}
-              onChange={(e) => setTextValue(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && textValue.trim() && submit(textValue.trim())}
-              placeholder="Type your answer…"
-              className="flex-1 px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-violet-500"
-            />
-            <button
-              onClick={() => textValue.trim() && submit(textValue.trim())}
-              className="px-3 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-sm text-white"
-            >
-              Send
-            </button>
-          </div>
-        )}
-
-        {input.kind === "scale" && (
-          <div className="space-y-2">
-            <div className="flex justify-between text-xs text-zinc-500">
-              <span>{input.scale_min_label ?? "1"}</span>
-              <span className="text-violet-400 font-medium">{scaleValue}</span>
-              <span>{input.scale_max_label ?? "10"}</span>
+      <NeoPanel className="max-w-xl overflow-hidden">
+        <NeoStrip>QUESTION</NeoStrip>
+        <div className="p-3 space-y-3">
+          <p className="text-sm font-black uppercase tracking-tight leading-tight">{input.question}</p>
+          {input.kind === "choice" && input.options && (
+            <div className="flex flex-wrap gap-2">
+              {input.options.map((opt) => (
+                <NeoBtn key={opt} variant="lime" className="text-[0.6rem]" onClick={() => submit(opt)}>
+                  {opt}
+                </NeoBtn>
+              ))}
             </div>
-            <input
-              type="range"
-              min={1}
-              max={10}
-              value={scaleValue}
-              onChange={(e) => setScaleValue(Number(e.target.value))}
-              className="w-full accent-violet-500"
-            />
-            <button
-              onClick={() => submit(scaleValue)}
-              className="w-full px-3 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-sm text-white"
-            >
-              Submit rating: {scaleValue}/10
-            </button>
-          </div>
-        )}
-      </div>
+          )}
+          {input.kind === "text" && (
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="text"
+                value={textValue}
+                onChange={(e) => setTextValue(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && textValue.trim() && submit(textValue.trim())}
+                className="neo-input flex-1 px-2 py-2 text-xs font-bold"
+              />
+              <NeoBtn variant="ink" onClick={() => textValue.trim() && submit(textValue.trim())}>
+                LOCK IN
+              </NeoBtn>
+            </div>
+          )}
+          {input.kind === "scale" && (
+            <div className="space-y-2">
+              <div className="flex justify-between text-[0.6rem] font-black uppercase text-neutral-600">
+                <span>{input.scale_min_label ?? "LOW"}</span>
+                <span className="text-black">{scaleValue}</span>
+                <span>{input.scale_max_label ?? "HIGH"}</span>
+              </div>
+              <input
+                type="range"
+                min={1}
+                max={10}
+                value={scaleValue}
+                onChange={(e) => setScaleValue(Number(e.target.value))}
+                className="w-full accent-black"
+              />
+              <NeoBtn variant="hot" className="w-full" onClick={() => submit(scaleValue)}>
+                SUBMIT {scaleValue}
+              </NeoBtn>
+            </div>
+          )}
+        </div>
+      </NeoPanel>
     );
   }
 
-  // Show answered state
   if (part.state === "output-available" || answered) {
     const result = part.output as { answer: unknown } | undefined;
     return (
-      <div className="rounded-xl border border-zinc-700 bg-zinc-900/50 p-3 text-sm text-zinc-400 flex items-start gap-2">
-        <span className="text-green-500 mt-0.5">✓</span>
-        <span>
-          <span className="text-zinc-300">{input.question}</span>
-          {result?.answer !== undefined && (
-            <span className="ml-2 text-violet-300">
-              → {String(result.answer)}
-            </span>
-          )}
+      <NeoPanel tone="lime" className="max-w-xl p-3 flex items-start gap-2 text-xs font-black uppercase">
+        <span className="text-black">OK</span>
+        <span className="text-neutral-800">
+          {question || "(question)"}
+          {result?.answer !== undefined && <span className="ml-2 text-black">{String(result.answer)}</span>}
         </span>
-      </div>
+      </NeoPanel>
+    );
+  }
+  return null;
+}
+
+// ── snackRun ─────────────────────────────────────────────────────────────────
+
+function SnackRunCard({ part, onAddToolResult }: ToolPartProps) {
+  const raw = part.input as Partial<SnackRunInput> | undefined;
+  const [done, setDone] = useState(part.state === "output-available");
+
+  const pick = (label: string) => {
+    setDone(true);
+    onAddToolResult(part.toolCallId, getToolName(part), { pick: label, at: new Date().toISOString() });
+  };
+
+  const headline = raw?.headline?.trim() ?? "";
+  const picks = Array.isArray(raw?.picks) ? raw.picks.filter((p): p is string => typeof p === "string" && p.length > 0) : [];
+  const inputReady = headline.length > 0 && picks.length >= 2;
+
+  if ((part.state === "input-available" || part.state === "input-streaming") && !done) {
+    if (!inputReady) return <LoadingToolCard label="snack run" />;
+    const input = raw as SnackRunInput;
+    return (
+      <NeoPanel tone="hot" className="max-w-xl overflow-hidden">
+        <NeoStrip>SNACK RUN</NeoStrip>
+        <div className="p-3 space-y-3">
+          <p className="text-sm font-black uppercase leading-tight">{input.headline}</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {input.picks.map((p) => (
+              <NeoBtn key={p} variant="outline" className="w-full text-[0.6rem] py-3 border-black text-black" onClick={() => pick(p)}>
+                {p}
+              </NeoBtn>
+            ))}
+          </div>
+        </div>
+      </NeoPanel>
     );
   }
 
+  if (part.state === "output-available" || done) {
+    const out = part.output as { pick?: string } | undefined;
+    return (
+      <NeoPanel tone="lime" className="max-w-xl p-3 text-xs font-black uppercase">
+        LOCKED: {out?.pick ?? "..."}
+      </NeoPanel>
+    );
+  }
   return null;
+}
+
+// ── versusPick ───────────────────────────────────────────────────────────────
+
+function VersusPickCard({ part, onAddToolResult }: ToolPartProps) {
+  const raw = part.input as Partial<VersusPickInput> | undefined;
+  const [done, setDone] = useState(part.state === "output-available");
+
+  const choose = (side: "A" | "B" | "tie") => {
+    setDone(true);
+    onAddToolResult(part.toolCallId, getToolName(part), { side, at: new Date().toISOString() });
+  };
+
+  const prompt = raw?.prompt?.trim() ?? "";
+  const optionA = raw?.optionA?.trim() ?? "";
+  const optionB = raw?.optionB?.trim() ?? "";
+  const inputReady = prompt.length > 0 && optionA.length > 0 && optionB.length > 0;
+
+  if ((part.state === "input-available" || part.state === "input-streaming") && !done) {
+    if (!inputReady) return <LoadingToolCard label="versus" />;
+    const input = raw as VersusPickInput;
+    return (
+      <NeoPanel tone="aqua" className="max-w-xl overflow-hidden">
+        <NeoStrip>VERSUS</NeoStrip>
+        <div className="p-3 space-y-3">
+          <p className="text-xs font-black uppercase leading-snug">{input.prompt}</p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <NeoBtn variant="lime" className="py-4 text-[0.6rem]" onClick={() => choose("A")}>
+              {input.optionA}
+            </NeoBtn>
+            <NeoBtn variant="outline" className="py-4 text-[0.6rem]" onClick={() => choose("tie")}>
+              TIE / BOTH
+            </NeoBtn>
+            <NeoBtn variant="lime" className="py-4 text-[0.6rem]" onClick={() => choose("B")}>
+              {input.optionB}
+            </NeoBtn>
+          </div>
+        </div>
+      </NeoPanel>
+    );
+  }
+
+  if (part.state === "output-available" || done) {
+    const out = part.output as { side?: string } | undefined;
+    return (
+      <NeoPanel className="max-w-xl p-3 text-xs font-black uppercase">
+        PICKED: {out?.side ?? "..."}
+      </NeoPanel>
+    );
+  }
+  return null;
+}
+
+// ── challengeFact ────────────────────────────────────────────────────────────
+
+function ChallengeFactCard({ part, onAddToolResult }: ToolPartProps) {
+  const raw = part.input as Partial<ChallengeFactInput> | undefined;
+  const [done, setDone] = useState(part.state === "output-available");
+
+  const claim = raw?.claim?.trim() ?? "";
+  const inputReady = claim.length > 0;
+
+  const verdict = (v: "yep" | "nope" | "kinda") => {
+    setDone(true);
+    const input = raw as ChallengeFactInput;
+    onAddToolResult(part.toolCallId, getToolName(part), { verdict: v, claim: input.claim, at: new Date().toISOString() });
+  };
+
+  if ((part.state === "input-available" || part.state === "input-streaming") && !done) {
+    if (!inputReady) return <LoadingToolCard label="challenge" />;
+    const input = raw as ChallengeFactInput;
+    return (
+      <NeoPanel tone="ink" className="max-w-xl overflow-hidden">
+        <NeoStrip>CHALLENGE</NeoStrip>
+        <div className="p-3 space-y-3">
+          <p className="text-sm font-black uppercase leading-snug text-[#d7ff3c]">{input.claim}</p>
+          <div className="grid grid-cols-3 gap-2">
+            <NeoBtn variant="lime" className="text-[0.55rem]" onClick={() => verdict("yep")}>
+              YEP
+            </NeoBtn>
+            <NeoBtn variant="outline" className="text-[0.55rem] !bg-white/90" onClick={() => verdict("kinda")}>
+              KINDA
+            </NeoBtn>
+            <NeoBtn variant="hot" className="text-[0.55rem]" onClick={() => verdict("nope")}>
+              NOPE
+            </NeoBtn>
+          </div>
+        </div>
+      </NeoPanel>
+    );
+  }
+
+  if (part.state === "output-available" || done) {
+    const out = part.output as { verdict?: string } | undefined;
+    return (
+      <NeoPanel tone="lime" className="max-w-xl p-3 text-xs font-black uppercase">
+        VERDICT: {out?.verdict ?? "..."}
+      </NeoPanel>
+    );
+  }
+  return null;
+}
+
+// ── stampTags ────────────────────────────────────────────────────────────────
+
+function StampTagsCard({ part, onAddToolResult }: ToolPartProps) {
+  const raw = part.input as Partial<StampTagsInput> | undefined;
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [done, setDone] = useState(part.state === "output-available");
+
+  const headline = raw?.headline?.trim() ?? "";
+  const tags = Array.isArray(raw?.tags) ? raw.tags.filter((t): t is string => typeof t === "string" && t.length > 0) : [];
+  const inputReady = headline.length > 0 && tags.length >= 2;
+
+  const toggle = (t: string) => {
+    setPicked((prev) => {
+      const n = new Set(prev);
+      if (n.has(t)) n.delete(t);
+      else n.add(t);
+      return n;
+    });
+  };
+
+  const commit = () => {
+    setDone(true);
+    onAddToolResult(part.toolCallId, getToolName(part), { tags: [...picked], at: new Date().toISOString() });
+  };
+
+  if ((part.state === "input-available" || part.state === "input-streaming") && !done) {
+    if (!inputReady) return <LoadingToolCard label="tags" />;
+    const input = raw as StampTagsInput;
+    return (
+      <NeoPanel className="max-w-xl overflow-hidden">
+        <NeoStrip>STAMP TAGS</NeoStrip>
+        <div className="p-3 space-y-3">
+          <p className="text-xs font-black uppercase">{input.headline}</p>
+          <div className="flex flex-wrap gap-2">
+            {input.tags.map((t) => {
+              const on = picked.has(t);
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => toggle(t)}
+                  className={`neo-btn px-2 py-1 text-[0.55rem] ${on ? "bg-black text-[#d7ff3c]" : "bg-[#fffdf5] text-black"}`}
+                >
+                  {on ? `[x] ${t}` : t}
+                </button>
+              );
+            })}
+          </div>
+          <NeoBtn variant="ink" className="w-full" onClick={commit} disabled={picked.size === 0}>
+            COMMIT {picked.size}
+          </NeoBtn>
+        </div>
+      </NeoPanel>
+    );
+  }
+
+  if (part.state === "output-available" || done) {
+    const out = part.output as { tags?: string[] } | undefined;
+    return (
+      <NeoPanel tone="aqua" className="max-w-xl p-3 text-xs font-black uppercase">
+        TAGGED: {(out?.tags ?? []).join(", ") || "..."}
+      </NeoPanel>
+    );
+  }
+  return null;
+}
+
+// ── onboardingPulse ──────────────────────────────────────────────────────────
+
+function OnboardingPulseCard({ part }: ToolPartProps) {
+  if (part.state === "input-streaming" || part.state === "input-available") {
+    return (
+      <NeoPanel tone="lime" className="max-w-xl p-3 flex items-center gap-2 text-xs font-black uppercase animate-pulse">
+        PULSE...
+      </NeoPanel>
+    );
+  }
+  if (part.state !== "output-available") return null;
+  const o = part.output as Partial<OnboardingPulseOutput> | undefined;
+  const banner = o?.banner ?? "PROGRESS";
+  const pct = typeof o?.pct === "number" ? o.pct : 0;
+  const factCount = o?.factCount ?? 0;
+  const topicCount = o?.topicCount ?? 0;
+  const topics = Array.isArray(o?.topics) ? o!.topics : [];
+  const huntThese = Array.isArray(o?.huntThese) ? o!.huntThese : [];
+  return (
+    <NeoPanel tone="cream" className="max-w-xl overflow-hidden">
+      <NeoStrip>PROGRESS HUD</NeoStrip>
+      <div className="p-3 space-y-3">
+        <p className="text-lg font-black uppercase leading-none">{banner}</p>
+        {o?.pinataError && (
+          <NeoPanel tone="hot" className="p-2 text-[0.6rem] font-black uppercase">
+            PINATA OFFLINE - KEY?
+          </NeoPanel>
+        )}
+        <div className="h-4 w-full border-[3px] border-black bg-white shadow-[2px_2px_0_0_#000]">
+          <div className="h-full bg-[#d7ff3c] transition-all" style={{ width: `${pct}%` }} />
+        </div>
+        <div className="grid grid-cols-2 gap-2 text-[0.65rem] font-black uppercase">
+          <NeoPanel tone="blue" className="p-2 text-[0.65rem] font-black uppercase text-white">
+            FACTS {factCount}
+          </NeoPanel>
+          <NeoPanel tone="purple" className="p-2 text-[0.65rem] font-black uppercase">
+            TOPICS {topicCount}
+          </NeoPanel>
+        </div>
+        {huntThese.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {huntThese.map((h) => (
+              <span key={h} className="border-[2px] border-black bg-[#ff3d5c] text-[#fffdf5] px-2 py-0.5 text-[0.55rem] font-black uppercase">
+                HUNT: {h}
+              </span>
+            ))}
+          </div>
+        )}
+        {topics.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {topics.map((t) => (
+              <span key={t} className="border-2 border-black bg-black text-[#d7ff3c] px-2 py-0.5 text-[0.55rem] font-black uppercase">
+                {t}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </NeoPanel>
+  );
 }
 
 // ── TavilySearch ─────────────────────────────────────────────────────────────
 
 function TavilySearchCard({ part, onAddToolResult }: ToolPartProps) {
-  const [savedCids, setSavedCids] = useState<Set<string>>(new Set());
+  const [saved, setSaved] = useState<Set<string>>(new Set());
 
   if (part.state === "input-streaming" || part.state === "input-available") {
     return (
-      <div className="rounded-xl border border-zinc-700 bg-zinc-900/50 p-3 text-sm text-zinc-400 flex items-center gap-2">
-        <svg className="w-4 h-4 animate-spin text-violet-400" fill="none" viewBox="0 0 24 24">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-        </svg>
-        Searching: <span className="text-zinc-300 italic">{(part.input as { query: string }).query}</span>
-      </div>
+      <NeoPanel tone="lime" className="max-w-xl p-3 text-xs font-black uppercase animate-pulse">
+        SEARCH...
+      </NeoPanel>
     );
   }
-
   if (part.state !== "output-available") return null;
-  const output = part.output as TavilySearchOutput;
+  const output = part.output as Partial<TavilySearchOutput> | undefined;
+  const results = Array.isArray(output?.results) ? output!.results : [];
+  const query = output?.query ?? "search";
 
   return (
-    <div className="rounded-xl border border-zinc-700 bg-zinc-900/50 overflow-hidden max-w-lg">
-      <div className="px-4 py-2 border-b border-zinc-700 bg-zinc-800/60 flex items-center gap-2">
-        <svg className="w-4 h-4 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-        </svg>
-        <span className="text-sm text-zinc-300 font-medium">
-          Search: <span className="text-violet-300">{output.query}</span>
-        </span>
-        <span className="ml-auto text-xs text-zinc-500">{output.results.length} results</span>
+    <NeoPanel className="max-w-xl overflow-hidden">
+      <NeoStrip>WEB RAID</NeoStrip>
+      <div className="p-2 space-y-2 border-b-[3px] border-black bg-[#d7ff3c]">
+        <p className="text-[0.65rem] font-black uppercase">Q: {query}</p>
+        {output?.answer && <p className="text-xs font-bold leading-snug normal-case">{output.answer}</p>}
       </div>
-
-      {output.answer && (
-        <div className="px-4 py-3 border-b border-zinc-700/50 bg-zinc-800/30">
-          <p className="text-sm text-zinc-300">{output.answer}</p>
-        </div>
-      )}
-
-      <div className="divide-y divide-zinc-700/50">
-        {output.results.slice(0, 4).map((r) => (
-          <div key={r.url} className="px-4 py-3 hover:bg-zinc-800/40 transition-colors">
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex-1 min-w-0">
-                <a
-                  href={r.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm font-medium text-violet-400 hover:text-violet-300 truncate block"
-                >
-                  {r.title}
-                </a>
-                <p className="text-xs text-zinc-500 mt-0.5 line-clamp-2">{r.content}</p>
-              </div>
-              <button
-                onClick={() => {
-                  setSavedCids((prev) => new Set([...prev, r.url]));
-                  onAddToolResult(part.toolCallId, part.toolName, {
-                    action: "save-suggestion",
-                    url: r.url,
-                    title: r.title,
-                    content: r.content,
-                  });
-                }}
-                disabled={savedCids.has(r.url)}
-                className="shrink-0 px-2 py-1 rounded-md bg-zinc-700 hover:bg-violet-700 disabled:bg-zinc-800 disabled:text-zinc-600 text-xs text-zinc-300 transition-colors"
-              >
-                {savedCids.has(r.url) ? "Saved" : "+ Save"}
-              </button>
+      <div className="divide-y-[3px] divide-black">
+        {results.slice(0, 5).map((r) => (
+          <div key={r.url} className="p-2 flex gap-2 items-start bg-[#fffdf5]">
+            <div className="flex-1 min-w-0">
+              <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-xs font-black uppercase text-[#ff3d5c] underline break-words">
+                {r.title}
+              </a>
+              <p className="text-[0.6rem] font-bold text-neutral-700 line-clamp-2 normal-case">{r.content}</p>
             </div>
+            <NeoBtn
+              variant="outline"
+              className="shrink-0 text-[0.55rem] py-1 px-2"
+              disabled={saved.has(r.url)}
+              onClick={() => {
+                setSaved((s) => new Set(s).add(r.url));
+                onAddToolResult(part.toolCallId, getToolName(part), {
+                  action: "save-suggestion",
+                  url: r.url,
+                  title: r.title,
+                  content: r.content,
+                });
+              }}
+            >
+              {saved.has(r.url) ? "QUEUED" : "SAVE"}
+            </NeoBtn>
           </div>
         ))}
       </div>
-    </div>
+    </NeoPanel>
   );
 }
 
-// ── FetchUrl ─────────────────────────────────────────────────────────────────
+// ── fetchUrl ─────────────────────────────────────────────────────────────────
 
 function FetchUrlCard({ part }: ToolPartProps) {
   if (part.state === "input-streaming" || part.state === "input-available") {
     return (
-      <div className="rounded-xl border border-zinc-700 bg-zinc-900/50 p-3 text-sm text-zinc-400 flex items-center gap-2">
-        <svg className="w-4 h-4 animate-spin text-violet-400" fill="none" viewBox="0 0 24 24">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-        </svg>
-        Extracting: <span className="text-violet-300 text-xs truncate max-w-xs">{(part.input as { url: string }).url}</span>
-      </div>
+      <NeoPanel tone="aqua" className="max-w-xl p-3 text-xs font-black uppercase animate-pulse">
+        EXTRACT...
+      </NeoPanel>
     );
   }
-
   if (part.state !== "output-available") return null;
   const output = part.output as ExtractUrlOutput;
-
   return (
-    <div className="rounded-xl border border-zinc-700 bg-zinc-900/50 p-4 max-w-lg space-y-2">
-      <div className="flex items-center gap-2">
-        <svg className="w-4 h-4 text-violet-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-        </svg>
-        <a href={output.url} target="_blank" rel="noopener noreferrer" className="text-xs text-violet-400 hover:text-violet-300 truncate">
+    <NeoPanel className="max-w-xl overflow-hidden">
+      <NeoStrip>URL SHRED</NeoStrip>
+      <div className="p-3 space-y-2">
+        <a href={output.url} target="_blank" rel="noopener noreferrer" className="text-[0.6rem] font-black uppercase text-[#ff3d5c] break-all underline">
           {output.url}
         </a>
+        {output.summary && <p className="text-xs font-bold leading-snug normal-case line-clamp-5">{output.summary}</p>}
       </div>
-      {output.summary && (
-        <p className="text-sm text-zinc-300 line-clamp-4">{output.summary}</p>
-      )}
-    </div>
+    </NeoPanel>
   );
 }
 
-// ── ListKnowledgeBase ─────────────────────────────────────────────────────────
+// ── wikipediaSummary ─────────────────────────────────────────────────────────
+
+function WikipediaSummaryCard({ part }: ToolPartProps) {
+  if (part.state === "input-streaming" || part.state === "input-available") {
+    return (
+      <NeoPanel tone="purple" className="max-w-xl p-3 text-xs font-black uppercase animate-pulse">
+        WIKIPEDIA...
+      </NeoPanel>
+    );
+  }
+  if (part.state !== "output-available") return null;
+  const out = part.output as WikipediaToolOutput;
+  if (!out.ok) {
+    return (
+      <NeoPanel tone="hot" className="max-w-xl p-3 text-xs font-black uppercase">
+        WIKI: {out.error ?? "unknown error"}
+      </NeoPanel>
+    );
+  }
+  return (
+    <NeoPanel className="max-w-xl overflow-hidden">
+      <NeoStrip>WIKIPEDIA</NeoStrip>
+      <div className="p-3 space-y-2">
+        <p className="text-sm font-black uppercase">{out.title}</p>
+        {out.description && <p className="text-[0.65rem] font-bold text-neutral-600">{out.description}</p>}
+        <p className="text-xs font-bold leading-snug normal-case line-clamp-6">{out.extract}</p>
+        {out.url && (
+          <a href={out.url} target="_blank" rel="noopener noreferrer" className="text-[0.6rem] font-black uppercase text-[#4D96FF] underline break-all">
+            Open article
+          </a>
+        )}
+      </div>
+    </NeoPanel>
+  );
+}
+
+// ── listKnowledgeBase ────────────────────────────────────────────────────────
 
 function ListKnowledgeBaseCard({ part }: ToolPartProps) {
   if (part.state !== "output-available") return null;
   const output = part.output as ListKbOutput;
-
   if (output.count === 0) {
     return (
-      <div className="rounded-xl border border-zinc-700 bg-zinc-900/50 p-3 text-sm text-zinc-500">
-        Knowledge base is empty — nothing saved yet.
-      </div>
+      <NeoPanel tone="hot" className="max-w-xl p-3 text-xs font-black uppercase">
+        KB EMPTY - HIT THEM
+      </NeoPanel>
     );
   }
-
   const topicGroups: Record<string, typeof output.entries> = {};
   for (const entry of output.entries) {
     const t = entry.topic || "general";
     topicGroups[t] = topicGroups[t] ?? [];
     topicGroups[t].push(entry);
   }
-
   return (
-    <div className="rounded-xl border border-zinc-700 bg-zinc-900/50 overflow-hidden max-w-lg">
-      <div className="px-4 py-2 border-b border-zinc-700 bg-zinc-800/60 flex items-center justify-between">
-        <span className="text-sm text-zinc-300 font-medium">Knowledge Base</span>
-        <span className="text-xs text-zinc-500">{output.count} entries</span>
-      </div>
-      <div className="divide-y divide-zinc-700/50">
+    <NeoPanel className="max-w-xl overflow-hidden">
+      <NeoStrip>KB SNAPSHOT ({output.count})</NeoStrip>
+      <div className="max-h-48 overflow-y-auto divide-y-[2px] divide-black">
         {Object.entries(topicGroups).map(([topic, entries]) => (
-          <div key={topic} className="px-4 py-2">
-            <p className="text-xs text-zinc-500 uppercase tracking-wide mb-1">{topic}</p>
+          <div key={topic} className="p-2">
+            <p className="text-[0.55rem] font-black uppercase text-neutral-500 mb-1">{topic}</p>
             {entries.map((e) => (
-              <p key={e.cid} className="text-sm text-zinc-300 truncate">• {e.name}</p>
+              <p key={e.cid} className="text-[0.65rem] font-bold truncate">
+                - {e.name}
+              </p>
             ))}
           </div>
         ))}
       </div>
-    </div>
+    </NeoPanel>
   );
 }
 
-// ── HITL Approval Card (shared for save / update / delete / finish) ──────────
+// ── HITL ──────────────────────────────────────────────────────────────────────
 
 interface HitlCardProps {
-  part: DynamicToolUIPart;
+  part: AppToolUIPart;
   onApprove: () => Promise<void>;
   onSkip: () => void;
   label: string;
@@ -363,157 +687,194 @@ function HitlCard({ part, onApprove, onSkip, label, description, detail, destruc
 
   if (status === "done") {
     return (
-      <div className="rounded-xl border border-green-700/50 bg-green-950/20 p-3 text-sm flex items-center gap-2 max-w-lg">
-        <span className="text-green-500">✓</span>
-        <span className="text-zinc-300">{label} — approved</span>
-      </div>
+      <NeoPanel tone="lime" className="max-w-xl p-3 text-xs font-black uppercase flex items-center gap-2">
+        <span>OK</span>
+        <span>{label}</span>
+      </NeoPanel>
     );
   }
   if (status === "skipped") {
     return (
-      <div className="rounded-xl border border-zinc-700 bg-zinc-900/50 p-3 text-sm flex items-center gap-2 max-w-lg">
-        <span className="text-zinc-500">✗</span>
-        <span className="text-zinc-500">{label} — skipped</span>
-      </div>
+      <NeoPanel className="max-w-xl p-3 text-xs font-black uppercase text-neutral-500">
+        SKIPPED: {label}
+      </NeoPanel>
     );
   }
 
   return (
-    <div className={`rounded-xl border p-4 max-w-lg space-y-3 ${destructive ? "border-red-700/40 bg-red-950/20" : "border-amber-600/30 bg-amber-950/20"}`}>
-      <div className="flex items-start gap-3">
-        <div className={`mt-0.5 w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${destructive ? "bg-red-900/50" : "bg-amber-900/50"}`}>
-          {destructive ? (
-            <svg className="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-          ) : (
-            <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-            </svg>
-          )}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className={`text-sm font-medium ${destructive ? "text-red-300" : "text-amber-300"}`}>{label}</p>
-          <p className="text-sm text-zinc-300 mt-0.5">{description}</p>
-          {detail && <p className="text-xs text-zinc-500 mt-1 line-clamp-3">{detail}</p>}
+    <NeoPanel tone={destructive ? "hot" : "cream"} className="max-w-xl overflow-hidden">
+      <NeoStrip>{destructive ? "DESTROY" : "APPROVAL"}</NeoStrip>
+      <div className="p-3 space-y-3">
+        <p className="text-xs font-black uppercase">{label}</p>
+        <p className="text-sm font-bold leading-snug normal-case">{description}</p>
+        {detail && <p className="text-[0.65rem] font-bold text-neutral-600 line-clamp-4 normal-case">{detail}</p>}
+        <div className="flex gap-2">
+          <NeoBtn variant={destructive ? "hot" : "ink"} className="flex-1" disabled={status === "loading"} onClick={handleApprove}>
+            {status === "loading" ? "..." : "YES"}
+          </NeoBtn>
+          <NeoBtn variant="outline" className="flex-1" onClick={() => { setStatus("skipped"); onSkip(); }}>
+            NAH
+          </NeoBtn>
         </div>
       </div>
-      <div className="flex gap-2">
-        <button
-          onClick={handleApprove}
-          disabled={status === "loading"}
-          className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50 ${
-            destructive
-              ? "bg-red-700 hover:bg-red-600 text-white"
-              : "bg-amber-700 hover:bg-amber-600 text-white"
-          }`}
-        >
-          {status === "loading" ? "Processing…" : "Approve"}
-        </button>
-        <button
-          onClick={() => { setSkipped(); onSkip(); }}
-          className="flex-1 py-2 rounded-lg text-sm font-medium bg-zinc-700 hover:bg-zinc-600 text-zinc-300 transition-all"
-        >
-          Skip
-        </button>
-      </div>
-    </div>
-  );
-
-  function setSkipped() { setStatus("skipped"); }
-}
-
-// ── SaveKnowledge ─────────────────────────────────────────────────────────────
-
-function SaveKnowledgeCard({ part, onAddToolResult }: ToolPartProps) {
-  const input = part.input as SaveKnowledgeInput;
-  return (
-    <HitlCard
-      part={part}
-      label="Save to knowledge base"
-      description={input.title ?? input.content.slice(0, 80)}
-      detail={input.title ? input.content.slice(0, 160) : undefined}
-      onApprove={async () => {
-        const res = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            messages: [],
-            toolApprovals: {
-              [part.toolCallId]: { approved: true, toolName: "saveKnowledge", args: input },
-            },
-          }),
-        });
-        const data = (await res.json()) as { toolResults: Record<string, unknown> };
-        const result = data.toolResults[part.toolCallId];
-        onAddToolResult(part.toolCallId, part.toolName, result);
-      }}
-      onSkip={() => onAddToolResult(part.toolCallId, part.toolName, { status: "skipped" })}
-    />
+    </NeoPanel>
   );
 }
 
-function UpdateKnowledgeCard({ part, onAddToolResult }: ToolPartProps) {
-  const input = part.input as UpdateKnowledgeInput;
-  return (
-    <HitlCard
-      part={part}
-      label="Update knowledge entry"
-      description={`Update entry (${input.cid.slice(0, 8)}…)`}
-      detail={input.content.slice(0, 160)}
-      onApprove={async () => {
-        const res = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            messages: [],
-            toolApprovals: {
-              [part.toolCallId]: { approved: true, toolName: "updateKnowledge", args: input },
-            },
-          }),
-        });
-        const data = (await res.json()) as { toolResults: Record<string, unknown> };
-        onAddToolResult(part.toolCallId, part.toolName, data.toolResults[part.toolCallId]);
-      }}
-      onSkip={() => onAddToolResult(part.toolCallId, part.toolName, { status: "skipped" })}
-    />
-  );
+function SaveKnowledgeCard({ part, onAddToolResult: _onAddToolResult }: ToolPartProps) {
+  const raw = part.input as Partial<SaveKnowledgeInput> | undefined;
+  const ready =
+    typeof raw?.content === "string" &&
+    raw.content.length > 0 &&
+    typeof raw?.wallet === "string" &&
+    typeof raw?.topic === "string" &&
+    typeof raw?.type === "string" &&
+    typeof raw?.source === "string";
+  if ((part.state === "input-available" || part.state === "input-streaming") && !ready) {
+    return <LoadingToolCard label="save" />;
+  }
+  if (
+    (part.state === "input-available" || part.state === "input-streaming") &&
+    ready
+  ) {
+    const input = raw as SaveKnowledgeInput;
+    return (
+      <NeoPanel tone="yellow" className="max-w-xl overflow-hidden animate-pulse">
+        <NeoStrip>PINNING</NeoStrip>
+        <div className="p-3 space-y-2">
+          <p className="text-xs font-black uppercase">{input.topic}</p>
+          <p className="text-sm font-bold leading-snug normal-case line-clamp-3">
+            {input.title ? `${input.title} — ${input.content.slice(0, 120)}` : input.content.slice(0, 160)}
+          </p>
+        </div>
+      </NeoPanel>
+    );
+  }
+  if (part.state === "output-available") {
+    const out = part.output as { cid?: string };
+    const input = raw as SaveKnowledgeInput;
+    return (
+      <NeoPanel tone="lime" className="max-w-xl p-3 text-xs font-black uppercase space-y-1">
+        <p>PINNED</p>
+        <p className="text-[0.65rem] font-bold normal-case text-neutral-800 line-clamp-2">{input.content.slice(0, 140)}</p>
+        {out?.cid && (
+          <p className="text-[0.55rem] font-mono font-bold text-neutral-600 break-all">CID {out.cid}</p>
+        )}
+      </NeoPanel>
+    );
+  }
+  if (part.state === "output-error") {
+    return (
+      <NeoPanel tone="hot" className="max-w-xl p-3 text-xs font-black uppercase">
+        PIN FAILED: {(part as { errorText?: string }).errorText ?? "error"}
+      </NeoPanel>
+    );
+  }
+  return null;
 }
 
-function DeleteKnowledgeCard({ part, onAddToolResult }: ToolPartProps) {
-  const input = part.input as DeleteKnowledgeInput;
-  return (
-    <HitlCard
-      part={part}
-      label="Delete knowledge entry"
-      description={`Remove CID: ${input.cid.slice(0, 16)}…`}
-      destructive
-      onApprove={async () => {
-        const res = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            messages: [],
-            toolApprovals: {
-              [part.toolCallId]: { approved: true, toolName: "deleteKnowledge", args: input },
-            },
-          }),
-        });
-        const data = (await res.json()) as { toolResults: Record<string, unknown> };
-        onAddToolResult(part.toolCallId, part.toolName, data.toolResults[part.toolCallId]);
-      }}
-      onSkip={() => onAddToolResult(part.toolCallId, part.toolName, { status: "skipped" })}
-    />
-  );
+function UpdateKnowledgeCard({ part, onAddToolResult: _onAddToolResult }: ToolPartProps) {
+  const raw = part.input as Partial<UpdateKnowledgeInput> | undefined;
+  const ready =
+    typeof raw?.cid === "string" &&
+    raw.cid.length > 0 &&
+    typeof raw?.content === "string" &&
+    typeof raw?.wallet === "string" &&
+    typeof raw?.topic === "string" &&
+    typeof raw?.type === "string" &&
+    typeof raw?.source === "string";
+  if ((part.state === "input-available" || part.state === "input-streaming") && !ready) {
+    return <LoadingToolCard label="update" />;
+  }
+  if (
+    (part.state === "input-available" || part.state === "input-streaming") &&
+    ready
+  ) {
+    const input = raw as UpdateKnowledgeInput;
+    return (
+      <NeoPanel tone="yellow" className="max-w-xl overflow-hidden animate-pulse">
+        <NeoStrip>UPDATING</NeoStrip>
+        <div className="p-3 space-y-2">
+          <p className="text-[0.65rem] font-mono font-bold break-all">CID {input.cid.slice(0, 14)}...</p>
+          <p className="text-sm font-bold leading-snug normal-case line-clamp-3">{input.content.slice(0, 160)}</p>
+        </div>
+      </NeoPanel>
+    );
+  }
+  if (part.state === "output-available") {
+    const out = part.output as { cid?: string };
+    return (
+      <NeoPanel tone="lime" className="max-w-xl p-3 text-xs font-black uppercase">
+        <p>UPDATED</p>
+        {out?.cid && <p className="text-[0.55rem] font-mono font-bold text-neutral-600 break-all mt-1">CID {out.cid}</p>}
+      </NeoPanel>
+    );
+  }
+  if (part.state === "output-error") {
+    return (
+      <NeoPanel tone="hot" className="max-w-xl p-3 text-xs font-black uppercase">
+        UPDATE FAILED: {(part as { errorText?: string }).errorText ?? "error"}
+      </NeoPanel>
+    );
+  }
+  return null;
+}
+
+function DeleteKnowledgeCard({ part, onAddToolResult: _onAddToolResult }: ToolPartProps) {
+  const raw = part.input as Partial<DeleteKnowledgeInput> | undefined;
+  const ready = typeof raw?.cid === "string" && raw.cid.length > 0 && typeof raw?.wallet === "string";
+  if ((part.state === "input-available" || part.state === "input-streaming") && !ready) {
+    return <LoadingToolCard label="delete" />;
+  }
+  if (
+    (part.state === "input-available" || part.state === "input-streaming") &&
+    ready
+  ) {
+    const input = raw as DeleteKnowledgeInput;
+    return (
+      <NeoPanel tone="hot" className="max-w-xl overflow-hidden animate-pulse">
+        <NeoStrip>DELETING</NeoStrip>
+        <div className="p-3">
+          <p className="text-[0.65rem] font-mono font-bold break-all">{input.cid}</p>
+        </div>
+      </NeoPanel>
+    );
+  }
+  if (part.state === "output-available") {
+    return (
+      <NeoPanel className="max-w-xl p-3 text-xs font-black uppercase text-neutral-600">
+        DELETED ROW
+      </NeoPanel>
+    );
+  }
+  if (part.state === "output-error") {
+    return (
+      <NeoPanel tone="hot" className="max-w-xl p-3 text-xs font-black uppercase">
+        DELETE FAILED: {(part as { errorText?: string }).errorText ?? "error"}
+      </NeoPanel>
+    );
+  }
+  return null;
 }
 
 function FinishOnboardingCard({ part, onAddToolResult }: ToolPartProps) {
-  const input = part.input as FinishOnboardingInput;
+  const raw = part.input as Partial<FinishOnboardingInput> | undefined;
+  const ready =
+    typeof raw?.summary === "string" &&
+    raw.summary.length > 0 &&
+    typeof raw?.wallet === "string" &&
+    typeof raw?.factCount === "number" &&
+    Array.isArray(raw?.topicsCovered);
+  if ((part.state === "input-available" || part.state === "input-streaming") && !ready) {
+    return <LoadingToolCard label="finish proposal" />;
+  }
+  if (!ready && part.state !== "output-available") return <LoadingToolCard label="finish proposal" />;
+  const input = raw as FinishOnboardingInput;
   return (
     <HitlCard
       part={part}
-      label="Complete onboarding"
-      description={`${input.factCount} facts across ${input.topicsCovered.length} topics`}
+      label="WRAP SESSION"
+      description={`${input.factCount} FACTS / ${input.topicsCovered.length} TOPICS`}
       detail={input.summary}
       onApprove={async () => {
         const res = await fetch("/api/chat", {
@@ -527,23 +888,48 @@ function FinishOnboardingCard({ part, onAddToolResult }: ToolPartProps) {
           }),
         });
         const data = (await res.json()) as { toolResults: Record<string, unknown> };
-        onAddToolResult(part.toolCallId, part.toolName, data.toolResults[part.toolCallId]);
+        onAddToolResult(part.toolCallId, getToolName(part), data.toolResults[part.toolCallId]);
       }}
-      onSkip={() => onAddToolResult(part.toolCallId, part.toolName, { status: "skipped" })}
+      onSkip={() => onAddToolResult(part.toolCallId, getToolName(part), { status: "skipped" })}
     />
   );
 }
 
-// ── Main dispatcher ───────────────────────────────────────────────────────────
+// ── Unknown tool fallback ───────────────────────────────────────────────────
+
+function UnknownToolCard({ part }: ToolPartProps) {
+  return (
+    <NeoPanel tone="aqua" className="max-w-xl overflow-hidden">
+      <NeoStrip>RAW TOOL / {getToolName(part)}</NeoStrip>
+      <pre className="p-3 text-[0.6rem] font-mono whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
+        {JSON.stringify({ input: part.input, state: part.state }, null, 2)}
+      </pre>
+    </NeoPanel>
+  );
+}
+
+// ── Dispatcher ───────────────────────────────────────────────────────────────
 
 export function ToolPartRenderer({ part, onAddToolResult }: ToolPartProps) {
-  switch (part.toolName) {
+  switch (getToolName(part)) {
     case "askUserQuestion":
       return <AskUserQuestionCard part={part} onAddToolResult={onAddToolResult} />;
+    case "snackRun":
+      return <SnackRunCard part={part} onAddToolResult={onAddToolResult} />;
+    case "versusPick":
+      return <VersusPickCard part={part} onAddToolResult={onAddToolResult} />;
+    case "challengeFact":
+      return <ChallengeFactCard part={part} onAddToolResult={onAddToolResult} />;
+    case "stampTags":
+      return <StampTagsCard part={part} onAddToolResult={onAddToolResult} />;
+    case "onboardingPulse":
+      return <OnboardingPulseCard part={part} onAddToolResult={onAddToolResult} />;
     case "tavilySearch":
       return <TavilySearchCard part={part} onAddToolResult={onAddToolResult} />;
     case "fetchUrl":
       return <FetchUrlCard part={part} onAddToolResult={onAddToolResult} />;
+    case "wikipediaSummary":
+      return <WikipediaSummaryCard part={part} onAddToolResult={onAddToolResult} />;
     case "listKnowledgeBase":
       return <ListKnowledgeBaseCard part={part} onAddToolResult={onAddToolResult} />;
     case "saveKnowledge":
@@ -555,6 +941,6 @@ export function ToolPartRenderer({ part, onAddToolResult }: ToolPartProps) {
     case "finishOnboarding":
       return <FinishOnboardingCard part={part} onAddToolResult={onAddToolResult} />;
     default:
-      return null;
+      return <UnknownToolCard part={part} onAddToolResult={onAddToolResult} />;
   }
 }

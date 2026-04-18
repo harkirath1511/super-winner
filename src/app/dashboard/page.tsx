@@ -2,30 +2,22 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import type { PinataEntry } from "@/lib/pinata";
+import { NeoBtn, NeoPanel, NeoStrip } from "../onboarding/_components/neo-ui";
+import { KbWebMap, type EntryWithDoc } from "./_components/KbWebMap";
 
-interface EntryWithDoc extends PinataEntry {
-  doc: {
-    content: string;
-    title?: string;
-    url?: string;
-    savedAt: string;
-  } | null;
-}
-
-const TOPIC_COLORS: Record<string, string> = {
-  work: "bg-blue-900/40 text-blue-300 border-blue-700/40",
-  hobbies: "bg-green-900/40 text-green-300 border-green-700/40",
-  media: "bg-pink-900/40 text-pink-300 border-pink-700/40",
-  food: "bg-orange-900/40 text-orange-300 border-orange-700/40",
-  values: "bg-purple-900/40 text-purple-300 border-purple-700/40",
-  technology: "bg-cyan-900/40 text-cyan-300 border-cyan-700/40",
-  travel: "bg-teal-900/40 text-teal-300 border-teal-700/40",
-  general: "bg-zinc-800 text-zinc-400 border-zinc-700",
+const TOPIC_SKIN: Record<string, string> = {
+  work: "bg-[#FFD93D]",
+  hobbies: "bg-[#6BCB77]",
+  media: "bg-[#A29BFE]",
+  food: "bg-[#FF6B6B] text-white",
+  values: "bg-black text-[#FFD93D]",
+  technology: "bg-white",
+  travel: "bg-[#FFF4E0]",
+  general: "bg-neutral-200",
 };
 
-function topicClass(topic: string): string {
-  return TOPIC_COLORS[topic.toLowerCase()] ?? TOPIC_COLORS.general;
+function topicSkin(topic: string): string {
+  return TOPIC_SKIN[topic.toLowerCase()] ?? TOPIC_SKIN.general;
 }
 
 export default function DashboardPage() {
@@ -35,6 +27,7 @@ export default function DashboardPage() {
   const [error, setError] = useState("");
   const [wallet, setWallet] = useState("");
   const [filterTopic, setFilterTopic] = useState<string>("");
+  const [topicChips, setTopicChips] = useState<string[]>([]);
   const [deletingCid, setDeletingCid] = useState<string | null>(null);
   const [expandedCid, setExpandedCid] = useState<string | null>(null);
 
@@ -58,6 +51,7 @@ export default function DashboardPage() {
         setWallet(data.wallet);
         const e = await fetchEntries();
         setEntries(e);
+        setTopicChips(Array.from(new Set(e.map((x) => x.keyvalues?.topic).filter(Boolean) as string[])).sort());
         setLoading(false);
       })
       .catch(() => {
@@ -66,8 +60,17 @@ export default function DashboardPage() {
       });
   }, [router, fetchEntries]);
 
+  useEffect(() => {
+    if (filterTopic !== "" || entries.length === 0) return;
+    setTopicChips((prev) => {
+      const s = new Set([...prev, ...(entries.map((e) => e.keyvalues?.topic).filter(Boolean) as string[])]);
+      return Array.from(s).sort();
+    });
+  }, [entries, filterTopic]);
+
   const handleFilterChange = async (topic: string) => {
     setFilterTopic(topic);
+    setExpandedCid(null);
     setLoading(true);
     try {
       const e = await fetchEntries(topic || undefined);
@@ -85,6 +88,7 @@ export default function DashboardPage() {
       const res = await fetch(`/api/kb?cid=${cid}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Delete failed");
       setEntries((prev) => prev.filter((e) => e.cid !== cid));
+      if (expandedCid === cid) setExpandedCid(null);
     } catch {
       setError("Delete failed");
     } finally {
@@ -92,7 +96,7 @@ export default function DashboardPage() {
     }
   };
 
-  const topics = Array.from(new Set(entries.map((e) => e.keyvalues?.topic).filter(Boolean)));
+  const chips = topicChips.length > 0 ? topicChips : Array.from(new Set(entries.map((e) => e.keyvalues?.topic).filter(Boolean) as string[])).sort();
 
   const grouped: Record<string, EntryWithDoc[]> = {};
   for (const e of entries) {
@@ -101,212 +105,112 @@ export default function DashboardPage() {
     grouped[t].push(e);
   }
 
+  const gatewayBase = process.env.NEXT_PUBLIC_PINATA_GATEWAY ?? "https://gateway.pinata.cloud";
+
   if (loading && entries.length === 0) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-zinc-950">
-        <div className="flex items-center gap-3 text-zinc-400">
-          <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
-          Loading knowledge base…
-        </div>
+      <div className="min-h-screen flex items-center justify-center av-page">
+        <NeoPanel tone="lime" className="px-6 py-4 animate-pulse">
+          <span className="text-xs font-black tracking-[0.3em]">LOADING MAP</span>
+        </NeoPanel>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950">
-      {/* Header */}
-      <header className="border-b border-zinc-800 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-violet-600/20 border border-violet-500/30 flex items-center justify-center">
-            <span className="text-sm">🧠</span>
-          </div>
+    <div className="min-h-screen av-page flex flex-col">
+      <header className="shrink-0 z-20 border-b-[3px] border-black bg-white px-4 py-3 flex flex-wrap items-center justify-between gap-2 shadow-[0_4px_0_0_#000]">
+        <div className="flex items-center gap-2">
+          <NeoPanel tone="ink" className="px-2 py-1 text-[0.55rem] font-black">
+            MAP
+          </NeoPanel>
           <div>
-            <p className="text-sm font-semibold text-zinc-100">Knowledge Base</p>
-            <p className="text-xs text-zinc-500">
-              {wallet.slice(0, 6)}…{wallet.slice(-4)} · {entries.length} entries
+            <p className="text-[0.65rem] font-black tracking-widest">PIN CONSTELLATION</p>
+            <p className="text-[0.55rem] font-bold opacity-70">
+              {wallet.slice(0, 6)}...{wallet.slice(-4)} / {entries.length} nodes
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => router.push("/onboarding")}
-            className="text-xs px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white font-medium transition-colors"
-          >
-            Continue onboarding
-          </button>
-          <button
+        <div className="flex gap-2">
+          <NeoBtn variant="outline" className="text-[0.55rem] py-1.5 px-2" onClick={() => router.push("/onboarding")}>
+            AGENT
+          </NeoBtn>
+          <NeoBtn
+            variant="outline"
+            className="text-[0.55rem] py-1.5 px-2"
             onClick={async () => {
               await fetch("/api/auth/logout", { method: "POST" });
               router.replace("/");
             }}
-            className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
           >
-            Sign out
-          </button>
+            OUT
+          </NeoBtn>
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-6 py-8 space-y-6">
+      <main className="flex-1 flex flex-col max-w-6xl w-full mx-auto px-3 sm:px-4 py-4 gap-4">
         {error && (
-          <div className="px-4 py-3 rounded-xl border border-red-700/40 bg-red-950/20 text-red-300 text-sm">
+          <NeoPanel tone="hot" className="p-3 text-xs font-black uppercase shrink-0">
             {error}
-          </div>
+          </NeoPanel>
         )}
 
-        {/* Filters */}
-        {topics.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => handleFilterChange("")}
-              className={`px-3 py-1 rounded-full text-sm border transition-colors ${
-                filterTopic === ""
-                  ? "bg-violet-700 border-violet-600 text-white"
-                  : "bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-zinc-200"
-              }`}
-            >
-              All
-            </button>
-            {topics.map((t) => (
-              <button
+        {chips.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <span className="text-[0.55rem] font-black text-neutral-500 uppercase mr-1">Filter</span>
+            <NeoBtn variant={filterTopic === "" ? "ink" : "outline"} className="text-[0.55rem] py-1.5" onClick={() => handleFilterChange("")}>
+              ALL
+            </NeoBtn>
+            {chips.map((t) => (
+              <NeoBtn
                 key={t}
+                variant={filterTopic === t ? "ink" : "lime"}
+                className={`text-[0.55rem] py-1.5 ${filterTopic === t ? "" : topicSkin(t)}`}
                 onClick={() => handleFilterChange(t)}
-                className={`px-3 py-1 rounded-full text-sm border transition-colors ${
-                  filterTopic === t
-                    ? "bg-violet-700 border-violet-600 text-white"
-                    : `${topicClass(t)}`
-                }`}
               >
                 {t}
-              </button>
+              </NeoBtn>
             ))}
           </div>
         )}
 
-        {/* Empty state */}
         {entries.length === 0 && !loading && (
-          <div className="flex flex-col items-center gap-4 py-20 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-zinc-800 flex items-center justify-center text-3xl">
-              📭
+          <NeoPanel className="max-w-lg mx-auto overflow-hidden text-center shrink-0">
+            <NeoStrip>EMPTY SKY</NeoStrip>
+            <div className="p-8 space-y-4">
+              <p className="text-sm font-black uppercase">NO NODES YET</p>
+              <p className="text-xs font-bold text-neutral-600 normal-case">Run onboarding so facts appear on the map.</p>
+              <NeoBtn variant="lime" className="w-full" onClick={() => router.push("/onboarding")}>
+                OPEN AGENT
+              </NeoBtn>
             </div>
-            <div className="space-y-1">
-              <p className="text-zinc-300 font-medium">No entries yet</p>
-              <p className="text-zinc-500 text-sm">
-                Complete your onboarding to start building your knowledge base.
-              </p>
-            </div>
-            <button
-              onClick={() => router.push("/onboarding")}
-              className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-colors"
-            >
-              Start onboarding
-            </button>
+          </NeoPanel>
+        )}
+
+        {entries.length > 0 && (
+          <div className="flex-1 min-h-0 relative">
+            {loading && (
+              <div className="absolute inset-0 z-40 flex items-center justify-center bg-[#fff4e0]/80 backdrop-blur-[2px] rounded-[28px]">
+                <NeoPanel tone="yellow" className="px-4 py-3 animate-pulse text-xs font-black uppercase">
+                  Refreshing…
+                </NeoPanel>
+              </div>
+            )}
+            <KbWebMap
+              grouped={grouped}
+              topicSkin={topicSkin}
+              expandedCid={expandedCid}
+              setExpandedCid={setExpandedCid}
+              deletingCid={deletingCid}
+              onDelete={handleDelete}
+              gatewayBase={gatewayBase}
+            />
           </div>
         )}
 
-        {/* Grouped entries */}
-        {Object.entries(grouped).map(([topic, topicEntries]) => (
-          <div key={topic} className="space-y-3">
-            <div className="flex items-center gap-2">
-              <span className={`px-2.5 py-0.5 rounded-full text-xs border font-medium ${topicClass(topic)}`}>
-                {topic}
-              </span>
-              <span className="text-zinc-600 text-xs">{topicEntries.length} entries</span>
-            </div>
-
-            <div className="space-y-2">
-              {topicEntries.map((entry) => {
-                const isExpanded = expandedCid === entry.cid;
-                return (
-                  <div
-                    key={entry.cid}
-                    className="rounded-xl border border-zinc-800 bg-zinc-900/50 overflow-hidden hover:border-zinc-700 transition-colors"
-                  >
-                    <div className="px-4 py-3 flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className={`px-1.5 py-0.5 rounded text-xs border ${topicClass(entry.keyvalues?.type || "general")}`}>
-                            {entry.keyvalues?.type ?? "fact"}
-                          </span>
-                          <span className="text-xs text-zinc-600">
-                            {new Date(entry.createdAt).toLocaleDateString()}
-                          </span>
-                        </div>
-                        {entry.doc?.title && (
-                          <p className="text-sm font-medium text-zinc-200 truncate">{entry.doc.title}</p>
-                        )}
-                        <p className={`text-sm text-zinc-400 ${isExpanded ? "" : "line-clamp-2"}`}>
-                          {entry.doc?.content ?? entry.name}
-                        </p>
-                        {entry.doc?.url && (
-                          <a
-                            href={entry.doc.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs text-violet-400 hover:text-violet-300 truncate block mt-1"
-                          >
-                            {entry.doc.url}
-                          </a>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          onClick={() => setExpandedCid(isExpanded ? null : entry.cid)}
-                          className="p-1.5 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors"
-                          title={isExpanded ? "Collapse" : "Expand"}
-                        >
-                          <svg className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </svg>
-                        </button>
-                        <a
-                          href={`${process.env.NEXT_PUBLIC_PINATA_GATEWAY ?? "https://gateway.pinata.cloud"}/ipfs/${entry.cid}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="p-1.5 rounded-lg text-zinc-500 hover:text-violet-400 hover:bg-zinc-800 transition-colors"
-                          title="View on IPFS"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                          </svg>
-                        </a>
-                        <button
-                          onClick={() => handleDelete(entry.cid)}
-                          disabled={deletingCid === entry.cid}
-                          className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-800 disabled:opacity-50 transition-colors"
-                          title="Delete entry"
-                        >
-                          {deletingCid === entry.cid ? (
-                            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                            </svg>
-                          ) : (
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-
-                    {isExpanded && (
-                      <div className="border-t border-zinc-800 px-4 py-3 bg-zinc-900/80">
-                        <p className="text-xs text-zinc-500 font-mono break-all">CID: {entry.cid}</p>
-                        {entry.keyvalues?.source && (
-                          <p className="text-xs text-zinc-500 mt-1">Source: {entry.keyvalues.source}</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+        <p className="text-center text-[0.6rem] font-bold text-neutral-500 normal-case shrink-0 pb-2">
+          Tap a node to open detail. Lines connect each topic hub to its pins.
+        </p>
       </main>
     </div>
   );

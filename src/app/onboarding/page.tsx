@@ -3,12 +3,26 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useChat } from "@ai-sdk/react";
-import { isToolUIPart, DefaultChatTransport, type DynamicToolUIPart } from "ai";
+import {
+  isToolUIPart,
+  DefaultChatTransport,
+  lastAssistantMessageIsCompleteWithApprovalResponses,
+  lastAssistantMessageIsCompleteWithToolCalls,
+} from "ai";
 import { ToolPartRenderer } from "./_components/ChatTools";
+import { NeoBtn, NeoPanel, BrowserChrome } from "./_components/neo-ui";
+import { slicePartsForSequentialFlow } from "@/lib/ai/client-tools";
 
 interface AuthState {
   wallet: string;
   onboardingComplete: boolean;
+}
+
+const BOT_AVATAR = "https://api.dicebear.com/7.x/bottts/svg?seed=TwinAgent";
+
+function userAvatarUrl(wallet: string) {
+  const seed = encodeURIComponent(wallet.slice(0, 16) || "guest");
+  return `https://api.dicebear.com/7.x/avataaars/svg?seed=${seed}`;
 }
 
 export default function OnboardingPage() {
@@ -16,9 +30,7 @@ export default function OnboardingPage() {
   const [auth, setAuth] = useState<AuthState | null>(null);
   const [loading, setLoading] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
-  // Check auth on mount
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => r.json())
@@ -37,26 +49,40 @@ export default function OnboardingPage() {
       .catch(() => router.replace("/"));
   }, [router]);
 
-  const { messages, sendMessage, status, addToolResult } = useChat({
+  const { messages, sendMessage, status, addToolOutput } = useChat({
     transport: new DefaultChatTransport({ api: "/api/chat" }),
+    /** Without this, tool answers never POST back and the run stalls. */
+    sendAutomaticallyWhen: ({ messages: m }) =>
+      lastAssistantMessageIsCompleteWithToolCalls({ messages: m }) ||
+      lastAssistantMessageIsCompleteWithApprovalResponses({ messages: m }),
   });
 
-  // Auto-scroll to bottom when messages change
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Kick off with a greeting on first load
   const startedRef = useRef(false);
   useEffect(() => {
     if (auth && !startedRef.current && messages.length === 0) {
       startedRef.current = true;
-      sendMessage({ text: "Hi, I'm ready to start." });
+      sendMessage({ text: "BOOT SEQUENCE. GO AGGRESSIVE." });
     }
   }, [auth, messages.length, sendMessage]);
 
   const [inputValue, setInputValue] = useState("");
+  const [exitBusy, setExitBusy] = useState(false);
   const isStreaming = status === "streaming" || status === "submitted";
+
+  const finishToDashboard = useCallback(async () => {
+    setExitBusy(true);
+    try {
+      const r = await fetch("/api/onboarding/complete", { method: "POST" });
+      if (!r.ok) return;
+      router.push("/dashboard");
+    } finally {
+      setExitBusy(false);
+    }
+  }, [router]);
 
   const handleSend = useCallback(() => {
     const text = inputValue.trim();
@@ -78,156 +104,178 @@ export default function OnboardingPage() {
   const handleAddToolResult = useCallback(
     (toolCallId: string, toolName: string, result: unknown) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (addToolResult as any)({ tool: toolName, toolCallId, output: result });
+      (addToolOutput as any)({ tool: toolName, toolCallId, output: result });
     },
-    [addToolResult]
+    [addToolOutput]
   );
 
   if (loading || !auth) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-zinc-950">
-        <div className="flex items-center gap-3 text-zinc-400">
-          <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
-          Loading…
-        </div>
+      <div className="min-h-screen flex items-center justify-center av-page">
+        <NeoPanel tone="yellow" className="px-8 py-5 animate-pulse">
+          <span className="text-sm font-black tracking-[0.25em] uppercase">Loading twin</span>
+        </NeoPanel>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-screen bg-zinc-950">
-      {/* Header */}
-      <header className="shrink-0 border-b border-zinc-800 px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-violet-600/20 border border-violet-500/30 flex items-center justify-center">
-            <span className="text-violet-400 text-sm">🧠</span>
+    <div className="flex flex-col min-h-screen av-page">
+      <nav className="shrink-0 z-30 px-4 py-4 border-b-[3px] border-black bg-white/90 backdrop-blur-sm">
+        <div className="max-w-3xl mx-auto flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3 av-pop rounded-2xl bg-white px-4 py-2">
+            <div className="rounded-xl border-[3px] border-black bg-[#FF6B6B] p-1.5">
+              <span className="text-lg leading-none" aria-hidden>
+                ✦
+              </span>
+            </div>
+            <div>
+              <p className="text-sm font-black uppercase tracking-tight">Onboarding</p>
+              <p className="text-[0.65rem] font-bold text-neutral-500">
+                {auth.wallet.slice(0, 6)}...{auth.wallet.slice(-4)}
+              </p>
+            </div>
           </div>
-          <div>
-            <p className="text-sm font-semibold text-zinc-100">LLM Twin — Onboarding</p>
-            <p className="text-xs text-zinc-500">
-              {auth.wallet.slice(0, 6)}…{auth.wallet.slice(-4)}
-            </p>
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <NeoBtn
+              variant="lime"
+              className="py-2 px-3 text-[0.65rem]"
+              disabled={exitBusy}
+              onClick={finishToDashboard}
+            >
+              {exitBusy ? "..." : "I'm done - dashboard"}
+            </NeoBtn>
+            <NeoBtn variant="outline" className="py-2 px-3 text-[0.65rem]" onClick={() => router.push("/dashboard")}>
+              KB
+            </NeoBtn>
+            <NeoBtn
+              variant="blue"
+              className="py-2 px-3 text-[0.65rem]"
+              onClick={async () => {
+                await fetch("/api/auth/logout", { method: "POST" });
+                router.replace("/");
+              }}
+            >
+              Sign out
+            </NeoBtn>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => router.push("/dashboard")}
-            className="text-xs text-zinc-400 hover:text-zinc-200 px-3 py-1.5 rounded-lg hover:bg-zinc-800 transition-colors"
-          >
-            Knowledge Base
-          </button>
-          <button
-            onClick={async () => {
-              await fetch("/api/auth/logout", { method: "POST" });
-              router.replace("/");
-            }}
-            className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-          >
-            Sign out
-          </button>
-        </div>
-      </header>
+      </nav>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
-        <div className="max-w-2xl mx-auto space-y-4">
-          {messages.map((msg) => (
-            <div key={msg.id} className="space-y-3">
-              {msg.role === "user" && (
-                <div className="flex justify-end">
-                  <div className="max-w-md px-4 py-2.5 rounded-2xl rounded-tr-sm bg-violet-600 text-white text-sm">
-                    {msg.parts
-                      .filter((p) => p.type === "text")
-                      .map((p, i) => (
-                        <span key={i}>{p.text}</span>
-                      ))}
+      <main className="flex-1 flex flex-col min-h-0 p-4">
+        <BrowserChrome title="twin.onboarding" className="flex-1 max-w-3xl w-full mx-auto min-h-0">
+          <div className="flex-1 overflow-y-auto min-h-0 bg-[#faf8f5] px-3 py-4 sm:px-5">
+            <div className="space-y-5 max-w-2xl mx-auto">
+              {messages.map((msg) => (
+                <div key={msg.id} className="space-y-4">
+                  {msg.role === "user" && (
+                    <div className="flex gap-3 items-end justify-end">
+                      <div className="max-w-[85%] border-[3px] border-black bg-[#4D96FF] px-4 py-3 rounded-2xl rounded-br-none text-white shadow-[4px_4px_0_0_#000]">
+                        <p className="text-sm font-bold leading-snug normal-case">
+                          {msg.parts
+                            .filter((p) => p.type === "text")
+                            .map((p, i) => (
+                              <span key={i}>{p.text}</span>
+                            ))}
+                        </p>
+                      </div>
+                      <div className="shrink-0 w-14 h-14 rounded-2xl border-[3px] border-black overflow-hidden bg-white shadow-[3px_3px_0_0_#000]">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={userAvatarUrl(auth.wallet)} alt="" className="w-full h-full object-cover" />
+                      </div>
+                    </div>
+                  )}
+
+                  {msg.role === "assistant" && (() => {
+                    const { visible, queued } = slicePartsForSequentialFlow(msg.parts);
+                    return (
+                      <div className="flex flex-col gap-4">
+                        {visible.map((part, i) => {
+                          if (part.type === "text" && part.text?.trim()) {
+                            return (
+                              <div key={i} className="flex gap-3 items-end">
+                                <div className="shrink-0 w-14 h-14 rounded-2xl border-[3px] border-black overflow-hidden bg-[#FFD93D] shadow-[3px_3px_0_0_#000]">
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img src={BOT_AVATAR} alt="" className="w-full h-full object-cover scale-110" />
+                                </div>
+                                <div className="max-w-[85%] border-[3px] border-black bg-[#E0E0E0] px-4 py-3 rounded-2xl rounded-bl-none shadow-[4px_4px_0_0_#000]">
+                                  <p className="text-sm font-bold leading-snug text-neutral-900 normal-case">
+                                    {part.text}
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          if (isToolUIPart(part)) {
+                            return (
+                              <div key={i} className="w-full pl-2 sm:pl-4">
+                                <ToolPartRenderer part={part} onAddToolResult={handleAddToolResult} />
+                              </div>
+                            );
+                          }
+
+                          return null;
+                        })}
+                        {queued > 0 && (
+                          <p className="text-[0.65rem] font-bold text-neutral-500 pl-2 sm:pl-14 normal-case">
+                            {queued} more step{queued === 1 ? "" : "s"} unlock after you answer the card above.
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              ))}
+
+              {isStreaming && (
+                <div className="flex gap-3 items-center">
+                  <div className="shrink-0 w-10 h-10 rounded-xl border-[3px] border-black bg-[#A29BFE] flex items-center justify-center font-black text-sm">
+                    ...
+                  </div>
+                  <div className="border-[3px] border-black bg-white px-4 py-2 rounded-2xl shadow-[3px_3px_0_0_#000] flex items-center gap-2">
+                    <span className="inline-flex gap-1">
+                      <span className="w-2 h-2 bg-[#4D96FF] rounded-sm animate-bounce [animation-delay:0ms]" />
+                      <span className="w-2 h-2 bg-[#FFD93D] rounded-sm animate-bounce [animation-delay:120ms]" />
+                      <span className="w-2 h-2 bg-[#FF6B6B] rounded-sm animate-bounce [animation-delay:240ms]" />
+                    </span>
+                    <span className="text-[0.65rem] font-black uppercase tracking-widest text-neutral-600">
+                      Thinking
+                    </span>
                   </div>
                 </div>
               )}
 
-              {msg.role === "assistant" && (
-                <div className="flex flex-col gap-3">
-                  {msg.parts.map((part, i) => {
-                    if (part.type === "text" && part.text) {
-                      return (
-                        <div key={i} className="flex items-start gap-2.5">
-                          <div className="shrink-0 w-7 h-7 rounded-full bg-violet-700 flex items-center justify-center text-xs">
-                            🧠
-                          </div>
-                          <div className="max-w-md px-4 py-2.5 rounded-2xl rounded-tl-sm bg-zinc-800 text-zinc-100 text-sm leading-relaxed">
-                            {part.text}
-                          </div>
-                        </div>
-                      );
-                    }
-
-                    if (isToolUIPart(part) && part.type === "dynamic-tool") {
-                      return (
-                        <div key={i} className="pl-9">
-                          <ToolPartRenderer
-                            part={part as DynamicToolUIPart}
-                            onAddToolResult={handleAddToolResult}
-                          />
-                        </div>
-                      );
-                    }
-
-                    return null;
-                  })}
-                </div>
-              )}
+              <div ref={bottomRef} />
             </div>
-          ))}
+          </div>
 
-          {isStreaming && (
-            <div className="flex items-center gap-2.5">
-              <div className="shrink-0 w-7 h-7 rounded-full bg-violet-700 flex items-center justify-center text-xs">
-                🧠
-              </div>
-              <div className="px-4 py-2.5 rounded-2xl rounded-tl-sm bg-zinc-800 text-zinc-400 text-sm flex items-center gap-2">
-                <span className="inline-flex gap-1">
-                  <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce [animation-delay:0ms]" />
-                  <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce [animation-delay:150ms]" />
-                  <span className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce [animation-delay:300ms]" />
-                </span>
-              </div>
+          <div className="shrink-0 border-t-[3px] border-black bg-white px-3 py-3 sm:px-4">
+            <div className="max-w-2xl mx-auto flex gap-2 items-stretch">
+              <input
+                type="text"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={handleKeyDown}
+                disabled={isStreaming}
+                placeholder={isStreaming ? "..." : "Type a message (optional)"}
+                className="neo-input flex-1 px-3 py-3 text-sm font-bold placeholder:text-neutral-400 disabled:opacity-50"
+              />
+              <NeoBtn
+                variant="lime"
+                className="px-5 shrink-0"
+                onClick={handleSend}
+                disabled={!inputValue.trim() || isStreaming}
+              >
+                Send
+              </NeoBtn>
             </div>
-          )}
-
-          <div ref={bottomRef} />
-        </div>
-      </div>
-
-      {/* Input */}
-      <div className="shrink-0 border-t border-zinc-800 px-4 py-4">
-        <div className="max-w-2xl mx-auto flex gap-3 items-end">
-          <input
-            ref={inputRef}
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            disabled={isStreaming}
-            placeholder={isStreaming ? "Agent is thinking…" : "Reply to the agent…"}
-            className="flex-1 px-4 py-3 rounded-xl bg-zinc-800 border border-zinc-700 focus:border-violet-500 focus:outline-none text-sm text-zinc-100 placeholder-zinc-500 disabled:opacity-50 transition-colors"
-          />
-          <button
-            onClick={handleSend}
-            disabled={!inputValue.trim() || isStreaming}
-            className="shrink-0 w-11 h-11 flex items-center justify-center rounded-xl bg-violet-600 hover:bg-violet-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white transition-all"
-          >
-            <svg className="w-5 h-5 rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-            </svg>
-          </button>
-        </div>
-        <p className="text-center text-xs text-zinc-600 mt-2">
-          Your answers build your anonymous AI twin • Never shares your real identity
-        </p>
-      </div>
+            <p className="text-center text-[0.6rem] font-black uppercase tracking-widest text-neutral-500 mt-2">
+              One step at a time — finish the card to unlock the next (sometimes a short text question).
+            </p>
+          </div>
+        </BrowserChrome>
+      </main>
     </div>
   );
 }
